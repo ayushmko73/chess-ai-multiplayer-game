@@ -1,1 +1,181 @@
-import React, { useState, useEffect, useCallback } from 'react';\nimport { Chess, Square, Move } from 'chess.js';\nimport { Trophy, RotateCcw, User, Cpu, Settings2, History, ChevronRight } from 'lucide-react';\nimport { clsx, type ClassValue } from 'clsx';\nimport { twMerge } from 'tailwind-merge';\n\nfunction cn(...inputs: ClassValue[]) {\n  return twMerge(clsx(inputs));\n}\n\nconst PIECE_IMAGES: Record<string, string> = {\n  wP: 'https://upload.wikimedia.org/wikipedia/commons/4/45/Chess_plt45.svg',\n  wR: 'https://upload.wikimedia.org/wikipedia/commons/7/72/Chess_rlt45.svg',\n  wN: 'https://upload.wikimedia.org/wikipedia/commons/7/70/Chess_nlt45.svg',\n  wB: 'https://upload.wikimedia.org/wikipedia/commons/b/b1/Chess_blt45.svg',\n  wQ: 'https://upload.wikimedia.org/wikipedia/commons/1/15/Chess_qlt45.svg',\n  wK: 'https://upload.wikimedia.org/wikipedia/commons/4/42/Chess_klt45.svg',\n  bP: 'https://upload.wikimedia.org/wikipedia/commons/c/c7/Chess_pdt45.svg',\n  bR: 'https://upload.wikimedia.org/wikipedia/commons/f/ff/Chess_rdt45.svg',\n  bN: 'https://upload.wikimedia.org/wikipedia/commons/e/ef/Chess_ndt45.svg',\n  bB: 'https://upload.wikimedia.org/wikipedia/commons/9/98/Chess_bdt45.svg',\n  bQ: 'https://upload.wikimedia.org/wikipedia/commons/4/47/Chess_qdt45.svg',\n  bK: 'https://upload.wikimedia.org/wikipedia/commons/f/f0/Chess_kdt45.svg',\n};\n\ntype Difficulty = 'Beginner' | 'Easy' | 'Hard' | 'Master';\ntype GameMode = 'PvP' | 'PvE';\n\nexport default function App() {\n  const [game, setGame] = useState(new Chess());\n  const [selectedSquare, setSelectedSquare] = useState<Square | null>(null);\n  const [gameMode, setGameMode] = useState<GameMode>('PvE');\n  const [difficulty, setDifficulty] = useState<Difficulty>('Easy');\n  const [history, setHistory] = useState<Move[]>([]);\n  const [status, setStatus] = useState<string>('White to move');\n\n  const makeMove = useCallback((move: any) => {\n    try {\n      const result = game.move(move);\n      if (result) {\n        setGame(new Chess(game.fen()));\n        setHistory(prev => [...prev, result]);\n        return true;\n      }\n    } catch (e) {\n      return false;\n    }\n    return false;\n  }, [game]);\n\n  const evaluateBoard = (chess: Chess) => {\n    const weights = { p: 1, n: 3, b: 3, r: 5, q: 9, k: 0 };\n    let score = 0;\n    chess.board().forEach(row => {\n      row.forEach(square => {\n        if (square) {\n          const val = weights[square.type];\n          score += square.color === 'w' ? val : -val;\n        }\n      });\n    });\n    return score;\n  };\n\n  const minimax = (chess: Chess, depth: number, alpha: number, beta: number, isMaximizing: boolean): number => {\n    if (depth === 0) return -evaluateBoard(chess);\n    const moves = chess.moves();\n    if (isMaximizing) {\n      let maxEval = -Infinity;\n      for (const move of moves) {\n        chess.move(move);\n        const ev = minimax(chess, depth - 1, alpha, beta, false);\n        chess.undo();\n        maxEval = Math.max(maxEval, ev);\n        alpha = Math.max(alpha, ev);\n        if (beta <= alpha) break;\n      }\n      return maxEval;\n    } else {\n      let minEval = Infinity;\n      for (const move of moves) {\n        chess.move(move);\n        const ev = minimax(chess, depth - 1, alpha, beta, true);\n        chess.undo();\n        minEval = Math.min(minEval, ev);\n        beta = Math.min(beta, ev);\n        if (beta <= alpha) break;\n      }\n      return minEval;\n    }\n  };\n\n  const getBestMove = (chess: Chess, diff: Difficulty) => {\n    const moves = chess.moves();\n    if (diff === 'Beginner') return moves[Math.floor(Math.random() * moves.length)];\n    \n    const depth = diff === 'Easy' ? 2 : diff === 'Hard' ? 3 : 4;\n    let bestMove = moves[0];\n    let bestValue = -Infinity;\n\n    for (const move of moves) {\n      chess.move(move);\n      const boardValue = minimax(chess, depth - 1, -Infinity, Infinity, false);\n      chess.undo();\n      if (boardValue > bestValue) {\n        bestValue = boardValue;\n        bestMove = move;\n      }\n    }\n    return bestMove;\n  };\n\n  useEffect(() => {\n    if (gameMode === 'PvE' && game.turn() === 'b' && !game.isGameOver()) {\n      const timer = setTimeout(() => {\n        const move = getBestMove(new Chess(game.fen()), difficulty);\n        makeMove(move);\n      }, 500);\n      return () => clearTimeout(timer);\n    }\n  }, [game.fen(), gameMode, difficulty, makeMove]);\n\n  useEffect(() => {\n    if (game.isCheckmate()) setStatus(`Checkmate! ${game.turn() === 'w' ? 'Black' : 'White'} wins!`);\n    else if (game.isDraw()) setStatus('Draw!');\n    else if (game.isCheck()) setStatus(`${game.turn() === 'w' ? 'White' : 'Black'} is in check!`);\n    else setStatus(`${game.turn() === 'w' ? 'White' : 'Black'}'s turn`);\n  }, [game]);\n\n  const onSquareClick = (square: Square) => {\n    if (game.isGameOver()) return;\n    if (gameMode === 'PvE' && game.turn() === 'b') return;\n\n    if (selectedSquare) {\n      const moveMade = makeMove({\n        from: selectedSquare,\n        to: square,\n        promotion: 'q',\n      });\n      setSelectedSquare(null);\n      if (moveMade) return;\n    }\n\n    const piece = game.get(square);\n    if (piece && piece.color === game.turn()) {\n      setSelectedSquare(square);\n    }\n  };\n\n  const resetGame = () => {\n    setGame(new Chess());\n    setHistory([]);\n    setSelectedSquare(null);\n  };\n\n  return (\n    <div className=\"min-h-screen bg-zinc-950 p-4 md:p-8 flex flex-col items-center\">\n      <header className=\"w-full max-w-5xl flex flex-col md:flex-row justify-between items-center mb-8 gap-4 border-b border-zinc-800 pb-6\">\n        <div className=\"flex items-center gap-3\">\n          <div className=\"bg-amber-500 p-2 rounded-lg\">\n            <Trophy className=\"text-zinc-950 w-6 h-6\" />\n          </div>\n          <h1 className=\"text-2xl font-bold tracking-tight\">CHESS <span className=\"text-amber-500\">PRO</span></h1>\n        </div>\n\n        <div className=\"flex flex-wrap justify-center gap-2\">\n          <div className=\"flex bg-zinc-900 rounded-lg p-1 border border-zinc-800\">\n            <button\n              onClick={() => setGameMode('PvP')}\n              className={cn(\n                \"flex items-center gap-2 px-4 py-1.5 rounded-md transition-all text-sm font-medium\",\n                gameMode === 'PvP' ? \"bg-zinc-800 text-amber-500 shadow-sm\" : \"text-zinc-400 hover:text-zinc-200\"\n              )}\n            >\n              <User size={16} /> Local PvP\n            </button>\n            <button\n              onClick={() => setGameMode('PvE')}\n              className={cn(\n                \"flex items-center gap-2 px-4 py-1.5 rounded-md transition-all text-sm font-medium\",\n                gameMode === 'PvE' ? \"bg-zinc-800 text-amber-500 shadow-sm\" : \"text-zinc-400 hover:text-zinc-200\"\n              )}\n            >\n              <Cpu size={16} /> Versus AI\n            </button>\n          </div>\n\n          <button\n            onClick={resetGame}\n            className=\"flex items-center gap-2 px-4 py-2 bg-zinc-900 border border-zinc-800 rounded-lg text-zinc-400 hover:text-white transition-colors\"\n          >\n            <RotateCcw size={16} />\n          </button>\n        </div>\n      </header>\n\n      <main className=\"w-full max-w-6xl grid grid-cols-1 lg:grid-cols-12 gap-8\">\n        {/* Sidebar Left: Settings/Difficulty */}\n        <div className=\"lg:col-span-3 space-y-6 order-2 lg:order-1\">\n          <div className=\"bg-zinc-900/50 rounded-xl p-5 border border-zinc-800 backdrop-blur-sm\">\n            <div className=\"flex items-center gap-2 mb-4 text-amber-500\">\n              <Settings2 size={18} />\n              <h2 className=\"font-semibold\">Game Settings</h2>\n            </div>\n            <div className=\"space-y-4\">\n              <div>\n                <label className=\"text-xs uppercase text-zinc-500 font-bold mb-2 block\">AI Difficulty</label>\n                <div className=\"grid grid-cols-2 gap-2\">\n                  {(['Beginner', 'Easy', 'Hard', 'Master'] as Difficulty[]).map((level) => (\n                    <button\n                      key={level}\n                      disabled={gameMode !== 'PvE'}\n                      onClick={() => setDifficulty(level)}\n                      className={cn(\n                        \"text-xs py-2 px-2 rounded-md border transition-all\",\n                        difficulty === level && gameMode === 'PvE'\n                          ? \"bg-amber-500/10 border-amber-500/50 text-amber-500 font-bold\"\n                          : \"bg-zinc-900 border-zinc-800 text-zinc-500 hover:border-zinc-700 disabled:opacity-30\"\n                      )}\n                    >\n                      {level}\n                    </button>\n                  ))}\n                </div>\n              </div>\n              <div className=\"pt-4 border-t border-zinc-800\">\n                <div className=\"p-3 bg-zinc-950 rounded-lg border border-zinc-800\">\n                  <p className=\"text-xs text-zinc-500 mb-1\">Current Status</p>\n                  <p className=\"font-mono text-sm text-zinc-200 font-bold uppercase\">{status}</p>\n                </div>\n              </div>\n            </div>\n          </div>\n        </div>\n\n        {/* Board Center */}\n        <div className=\"lg:col-span-6 flex flex-col items-center order-1 lg:order-2\">\n          <div className=\"w-full chess-board bg-zinc-800 rounded-sm overflow-hidden border-zinc-800 shadow-2xl\">\n            {game.board().map((row, i) =>\n              row.map((square, j) => {\n                const squareName = (String.fromCharCode(97 + j) + (8 - i)) as Square;\n                const isDark = (i + j) % 2 === 1;\n                const isSelected = selectedSquare === squareName;\n                const lastMove = history.length > 0 && (history[history.length - 1].from === squareName || history[history.length - 1].to === squareName);\n\n                return (\n                  <div\n                    key={squareName}\n                    onClick={() => onSquareClick(squareName)}\n                    className={cn(\n                      'square',\n                      isDark ? 'square-dark' : 'square-light',\n                      isSelected && 'square-highlight',\n                      lastMove && !isSelected && 'square-last-move'\n                    )}\n                  >\n                    {square && (\n                      <img\n                        src={PIECE_IMAGES[`${square.color}${square.type.toUpperCase()}`]}\n                        alt={`${square.color}${square.type}`}\n                        className=\"piece-img drop-shadow-lg\"\n                      />\n                    )}\n                    {j === 0 && <span className=\"absolute top-0.5 left-0.5 text-[10px] opacity-30 font-bold select-none\">{8 - i}</span>}\n                    {i === 7 && <span className=\"absolute bottom-0.5 right-0.5 text-[10px] opacity-30 font-bold select-none\">{String.fromCharCode(97 + j)}</span>}\n                  </div>\n                );\n              })\n            )}\n          </div>\n        </div>\n\n        {/* Sidebar Right: History */}\n        <div className=\"lg:col-span-3 space-y-6 order-3\">\n          <div className=\"bg-zinc-900/50 rounded-xl p-5 border border-zinc-800 backdrop-blur-sm h-full max-h-[600px] flex flex-col\">\n            <div className=\"flex items-center gap-2 mb-4 text-amber-500\">\n              <History size={18} />\n              <h2 className=\"font-semibold\">Move History</h2>\n            </div>\n            <div className=\"flex-1 overflow-y-auto pr-2 custom-scrollbar\">\n              <div className=\"grid grid-cols-1 gap-1\">\n                {Array.from({ length: Math.ceil(history.length / 2) }).map((_, i) => (\n                  <div key={i} className=\"flex items-center gap-3 py-1.5 px-3 rounded bg-zinc-900/50 border border-zinc-800/50\">\n                    <span className=\"text-zinc-600 text-xs font-bold w-4\">{i + 1}.</span>\n                    <span className=\"text-zinc-200 text-sm font-medium w-full flex items-center justify-between\">\n                      <span className=\"flex-1\">{history[i * 2]?.san}</span>\n                      {history[i * 2 + 1] && (\n                        <>\n                          <ChevronRight size={12} className=\"text-zinc-700 mx-2\" />\n                          <span className=\"flex-1 text-right text-amber-400\">{history[i * 2 + 1]?.san}</span>\n                        </>\n                      )}\n                    </span>\n                  </div>\n                ))}\n                {history.length === 0 && (\n                  <div className=\"text-center py-8 text-zinc-600 text-sm italic\">\n                    No moves yet...\n                  </div>\n                )}\n              </div>\n            </div>\n          </div>\n        </div>\n      </main>\n\n      <footer className=\"mt-auto pt-12 text-zinc-600 text-[10px] uppercase tracking-[0.2em] font-bold\">\n        Grandmaster Engine v4.0.2 • Powered by Strategic Algorithms\n      </footer>\n    </div>\n  );\n}"\n  }\n]
+import React, { useState, useEffect, useCallback } from 'react';
+import { Chess, Move } from 'chess.js';
+import { Chessboard } from 'react-chessboard';
+import { Trophy, RefreshCw, Settings2, Users, Cpu, Globe, ChevronLeft, History } from 'lucide-react';
+import { getBestMove } from './lib/engine';
+import { Difficulty, GameMode, PlayerColor } from './types/chess';
+
+export default function App() {
+  const [game, setGame] = useState(new Chess());
+  const [mode, setMode] = useState<GameMode | null>(null);
+  const [difficulty, setDifficulty] = useState<Difficulty>('Easy');
+  const [playerColor, setPlayerColor] = useState<PlayerColor>('w');
+  const [status, setStatus] = useState('');
+  const [moveHistory, setMoveHistory] = useState<string[]>([]);
+
+  const makeAMove = useCallback((move: any) => {
+    try {
+      const result = game.move(move);
+      setGame(new Chess(game.fen()));
+      setMoveHistory(game.history());
+      return result;
+    } catch (e) {
+      return null;
+    }
+  }, [game]);
+
+  useEffect(() => {
+    if (mode === 'AI' && game.turn() !== playerColor && !game.isGameOver()) {
+      setTimeout(() => {
+        const aiMove = getBestMove(game, difficulty);
+        makeAMove(aiMove);
+      }, 600);
+    }
+    
+    if (game.isGameOver()) {
+      if (game.isCheckmate()) setStatus(`Checkmate! ${game.turn() === 'w' ? 'Black' : 'White'} wins.`);
+      else if (game.isDraw()) setStatus('Draw!');
+      else setStatus('Game Over');
+    } else {
+      setStatus(`${game.turn() === 'w' ? "White's" : "Black's"} Turn`);
+    }
+  }, [game, mode, difficulty, playerColor, makeAMove]);
+
+  function onDrop(sourceSquare: string, targetSquare: string) {
+    if (mode === 'AI' && game.turn() !== playerColor) return false;
+    const move = makeAMove({
+      from: sourceSquare,
+      to: targetSquare,
+      promotion: 'q',
+    });
+    return move !== null;
+  }
+
+  const resetGame = () => {
+    setGame(new Chess());
+    setMoveHistory([]);
+  };
+
+  if (!mode) {
+    return (
+      <div className="min-h-screen bg-zinc-950 text-zinc-100 flex items-center justify-center p-4">
+        <div className="w-full max-w-md space-y-8">
+          <div className="text-center space-y-2">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-zinc-900 border border-zinc-800 mb-4">
+              <Trophy className="w-8 h-8 text-amber-500" />
+            </div>
+            <h1 className="text-4xl font-bold tracking-tight">Grandmaster</h1>
+            <p className="text-zinc-500">Select your challenge level</p>
+          </div>
+
+          <div className="grid gap-4">
+            <button onClick={() => setMode('Local')} className="group relative flex items-center gap-4 p-4 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-600 transition-all">
+              <Users className="w-6 h-6 text-blue-400" />
+              <div className="text-left">
+                <div className="font-semibold">Local Multiplayer</div>
+                <div className="text-xs text-zinc-500">Play with a friend on one device</div>
+              </div>
+            </button>
+
+            <button onClick={() => setMode('AI')} className="group relative flex items-center gap-4 p-4 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-600 transition-all">
+              <Cpu className="w-6 h-6 text-purple-400" />
+              <div className="text-left">
+                <div className="font-semibold">Versus AI</div>
+                <div className="text-xs text-zinc-500">Test your skills against the engine</div>
+              </div>
+            </button>
+
+            <button onClick={() => setMode('Multiplayer')} className="group relative flex items-center gap-4 p-4 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-600 transition-all">
+              <Globe className="w-6 h-6 text-emerald-400" />
+              <div className="text-left">
+                <div className="font-semibold">Online Multiplayer</div>
+                <div className="text-xs text-zinc-500">Challenge players worldwide</div>
+              </div>
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-zinc-950 text-zinc-100 lg:flex">
+      {/* Game Sidebar / Controls */}
+      <div className="lg:w-96 p-6 border-b lg:border-b-0 lg:border-r border-zinc-900 flex flex-col gap-6">
+        <div className="flex items-center justify-between">
+          <button onClick={() => setMode(null)} className="p-2 hover:bg-zinc-900 rounded-lg transition-colors">
+            <ChevronLeft className="w-5 h-5" />
+          </button>
+          <div className="text-sm font-medium px-3 py-1 bg-zinc-900 rounded-full border border-zinc-800">
+            {mode} Mode
+          </div>
+          <button onClick={resetGame} className="p-2 hover:bg-zinc-900 rounded-lg transition-colors">
+            <RefreshCw className="w-5 h-5" />
+          </button>
+        </div>
+
+        {mode === 'AI' && (
+          <div className="space-y-3">
+            <label className="text-xs font-semibold text-zinc-500 uppercase tracking-wider">Difficulty</label>
+            <div className="grid grid-cols-2 gap-2">
+              {(['Beginner', 'Easy', 'Hard', 'Master'] as Difficulty[]).map((d) => (
+                <button
+                  key={d}
+                  onClick={() => setDifficulty(d)}
+                  className={`px-3 py-2 rounded-lg text-sm transition-all border ${
+                    difficulty === d ? 'bg-zinc-100 text-zinc-950 border-white' : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:border-zinc-600'
+                  }`}
+                >
+                  {d}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div className="flex-1 space-y-4">
+          <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-800">
+            <div className="text-xs text-zinc-500 mb-1">Game Status</div>
+            <div className="text-lg font-bold">{status}</div>
+          </div>
+
+          <div className="p-4 rounded-xl bg-zinc-900 border border-zinc-800 flex-1">
+            <div className="flex items-center gap-2 text-xs text-zinc-500 mb-3">
+              <History className="w-3 h-3" />
+              <span>MOVE HISTORY</span>
+            </div>
+            <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-sm max-h-48 overflow-y-auto font-mono">
+              {moveHistory.reduce((acc: any[], curr, i) => {
+                if (i % 2 === 0) acc.push([curr]);
+                else acc[acc.length - 1].push(curr);
+                return acc;
+              }, []).map((pair, idx) => (
+                <React.Fragment key={idx}>
+                  <span className="text-zinc-600">{idx + 1}. {pair[0]}</span>
+                  <span className="text-zinc-400">{pair[1] || ''}</span>
+                </React.Fragment>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Main Board Area */}
+      <main className="flex-1 flex items-center justify-center p-4 lg:p-12">
+        <div className="w-full max-w-[600px] aspect-square shadow-2xl shadow-black/50">
+          <Chessboard 
+            position={game.fen()} 
+            onPieceDrop={onDrop} 
+            boardOrientation={playerColor === 'w' ? 'white' : 'black'}
+            customDarkSquareStyle={{ backgroundColor: '#27272a' }}
+            customLightSquareStyle={{ backgroundColor: '#3f3f46' }}
+            customBoardStyle={{
+              borderRadius: '4px',
+              boxShadow: '0 20px 25px -5px rgb(0 0 0 / 0.1), 0 8px 10px -6px rgb(0 0 0 / 0.1)',
+            }}
+          />
+        </div>
+      </main>
+    </div>
+  );
+}
