@@ -1,94 +1,85 @@
 import { Chess, Move } from 'chess.js';
 
-export type Difficulty = 'Beginner' | 'Easy' | 'Hard' | 'Master';
+type Difficulty = 'Beginner' | 'Easy' | 'Hard' | 'Master';
 
 const PIECE_VALUES: Record<string, number> = {
-  p: 100,
-  n: 320,
-  b: 330,
-  r: 500,
-  q: 900,
-  k: 20000,
+  p: 10,
+  n: 30,
+  b: 30,
+  r: 50,
+  q: 90,
+  k: 900,
+};
+
+const getPieceValue = (piece: any) => {
+  if (!piece) return 0;
+  const val = PIECE_VALUES[piece.type] || 0;
+  return piece.color === 'w' ? val : -val;
 };
 
 const evaluateBoard = (game: Chess) => {
   let totalEvaluation = 0;
   const board = game.board();
-  
   for (let i = 0; i < 8; i++) {
     for (let j = 0; j < 8; j++) {
-      const piece = board[i][j];
-      if (piece) {
-        const value = PIECE_VALUES[piece.type] || 0;
-        totalEvaluation += piece.color === 'w' ? value : -value;
-      }
+      totalEvaluation += getPieceValue(board[i][j]);
     }
   }
   return totalEvaluation;
 };
 
 const minimax = (game: Chess, depth: number, alpha: number, beta: number, isMaximizingPlayer: boolean): number => {
-  if (depth === 0 || game.isGameOver()) {
-    return -evaluateBoard(game);
-  }
+  if (depth === 0) return -evaluateBoard(game);
 
   const moves = game.moves();
 
   if (isMaximizingPlayer) {
-    let maxEval = -Infinity;
+    let bestEval = -9999;
     for (const move of moves) {
       game.move(move);
-      const evalVal = minimax(game, depth - 1, alpha, beta, false);
+      bestEval = Math.max(bestEval, minimax(game, depth - 1, alpha, beta, !isMaximizingPlayer));
       game.undo();
-      maxEval = Math.max(maxEval, evalVal);
-      alpha = Math.max(alpha, evalVal);
-      if (beta <= alpha) break;
+      alpha = Math.max(alpha, bestEval);
+      if (beta <= alpha) return bestEval;
     }
-    return maxEval;
+    return bestEval;
   } else {
-    let minEval = Infinity;
+    let bestEval = 9999;
     for (const move of moves) {
       game.move(move);
-      const evalVal = minimax(game, depth - 1, alpha, beta, true);
+      bestEval = Math.min(bestEval, minimax(game, depth - 1, alpha, beta, !isMaximizingPlayer));
       game.undo();
-      minEval = Math.min(minEval, evalVal);
-      beta = Math.min(beta, evalVal);
-      if (beta <= alpha) break;
+      beta = Math.min(beta, bestEval);
+      if (beta <= alpha) return bestEval;
     }
-    return minEval;
+    return bestEval;
   }
 };
 
 export const getBestMove = (game: Chess, difficulty: Difficulty): string | null => {
-  const possibleMoves = game.moves();
-  if (possibleMoves.length === 0) return null;
+  const moves = game.moves();
+  if (moves.length === 0) return null;
 
   if (difficulty === 'Beginner') {
-    const randomIndex = Math.floor(Math.random() * possibleMoves.length);
-    return possibleMoves[randomIndex];
+    return moves[Math.floor(Math.random() * moves.length)];
   }
 
-  let bestMove = null;
-  let bestValue = -Infinity;
   let depth = 2;
-
-  if (difficulty === 'Easy') depth = 2;
   if (difficulty === 'Hard') depth = 3;
-  if (difficulty === 'Master') depth = 3; // Keep 3 for performance in JS main thread, but could go 4 with worker
+  if (difficulty === 'Master') depth = 4;
 
-  // Sort moves to improve pruning (capture moves first usually helps)
-  possibleMoves.sort(() => Math.random() - 0.5);
+  let bestMove = null;
+  let bestValue = -9999;
 
-  for (const move of possibleMoves) {
+  for (const move of moves) {
     game.move(move);
-    const boardValue = minimax(game, depth - 1, -Infinity, Infinity, false);
+    const boardValue = minimax(game, depth - 1, -10000, 10000, false);
     game.undo();
-    
     if (boardValue > bestValue) {
       bestValue = boardValue;
       bestMove = move;
     }
   }
 
-  return bestMove || possibleMoves[0];
+  return bestMove || moves[0];
 };
