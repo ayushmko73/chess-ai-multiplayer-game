@@ -4,10 +4,12 @@ export default {
   theme: {
     extend: {
       colors: {
-        border: 'hsl(var(--border))',
-        background: 'hsl(var(--background))',
-        foreground: 'hsl(var(--foreground))',
-      },
+        chess: {
+          light: '#ebecd0',
+          dark: '#779556',
+          accent: '#f6f669'
+        }
+      }
     },
   },
   plugins: [],
